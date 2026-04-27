@@ -10,3 +10,4 @@ target/
 .env.*
 !.env.example
 *.log
+backend/data/

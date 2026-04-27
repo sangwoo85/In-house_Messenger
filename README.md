@@ -40,9 +40,8 @@ Electron + React 데스크톱 클라이언트와 Spring Boot 백엔드로 구성
 
 - Backend: `http://localhost:8080`
 - WebSocket: `ws://localhost:8080/ws`
-- MySQL: `localhost:3306`
-- Redis: `localhost:6379`
-- Redis password: `your_password`
+- MySQL: `localhost:3306 / messenger / root / 1234`
+- Redis: `localhost:6379 / messenger_user / 1234`
 
 주요 환경 변수:
 
@@ -50,10 +49,12 @@ Electron + React 데스크톱 클라이언트와 Spring Boot 백엔드로 구성
 - `INTERNAL_API_KEY`
 - `INTERNAL_AUTH_BASE_URL`
 - `MYSQL_DATABASE`
-- `MYSQL_USER`
-- `MYSQL_PASSWORD`
+- `JDBC_USERNAME`
+- `JDBC_PASSWORD`
+- `JDBC_URL`
 - `REDIS_HOST`
 - `REDIS_PORT`
+- `REDIS_USERNAME`
 - `REDIS_PASSWORD`
 - `FILE_STORAGE_PATH`
 
@@ -170,6 +171,6 @@ cd backend
 
 ## Notes
 
-- Redis는 `localhost:6379`와 비밀번호 `your_password` 기준으로 설정되어 있습니다.
+- Redis는 `localhost:6379`, 사용자 `messenger_user`, 비밀번호 `1234` 기준으로 설정되어 있습니다.
 - 프론트는 Electron IPC로만 OS 기능에 접근하며 `contextIsolation: true`, `nodeIntegration: false`를 유지합니다.
 - 내부 공지/알림 API는 외부 사내 시스템이 호출하는 용도입니다.
