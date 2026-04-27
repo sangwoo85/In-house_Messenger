@@ -1,0 +1,12 @@
+.DS_Store
+.idea/
+node_modules/
+dist/
+dist-electron/
+out/
+release/
+target/
+.env
+.env.*
+!.env.example
+*.log
