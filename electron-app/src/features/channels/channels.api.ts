@@ -41,6 +41,12 @@ export interface MessageSlice {
   hasNext: boolean
 }
 
+export interface CreateChannelPayload {
+  name: string | null
+  type: 'DM' | 'GROUP'
+  memberUserIds: string[]
+}
+
 interface ApiResponse<T> {
   success: boolean
   data: T
@@ -50,6 +56,11 @@ interface ApiResponse<T> {
 
 export async function getChannels(): Promise<Channel[]> {
   const response = await http.get<ApiResponse<Channel[]>>('/channels')
+  return response.data.data
+}
+
+export async function createChannel(payload: CreateChannelPayload): Promise<Channel> {
+  const response = await http.post<ApiResponse<Channel>>('/channels', payload)
   return response.data.data
 }
 

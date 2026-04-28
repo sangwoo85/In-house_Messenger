@@ -16,6 +16,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final PresenceService presenceService;
+    private final UserService userService;
 
     @PostMapping("/auth/login")
     public ApiResponse<LoginResponse> login(
@@ -43,6 +44,13 @@ public class AuthController {
     @GetMapping("/users/me")
     public ApiResponse<UserProfileResponse> me(@AuthenticationPrincipal AuthenticatedUser authenticatedUser) {
         return ApiResponse.ok(authService.getMyProfile(authenticatedUser.userId()));
+    }
+
+    @GetMapping("/users")
+    public ApiResponse<java.util.List<UserProfileResponse>> getUsers(
+            @AuthenticationPrincipal AuthenticatedUser authenticatedUser
+    ) {
+        return ApiResponse.ok(userService.getDirectory(authenticatedUser.userId()));
     }
 
     @GetMapping("/users/presence")

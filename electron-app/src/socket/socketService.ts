@@ -1,10 +1,12 @@
 import { Client, IMessage, StompSubscription } from '@stomp/stompjs'
+import { wsUrl } from '@/services/runtime'
 
 type MessageCallback = (message: IMessage) => void
 
 class SocketService {
   private client: Client | null = null
   private reconnectAttempts = 0
+  private connectListeners = new Set<() => void>()
 
   connect(accessToken: string, onConnect?: () => void): void {
     if (this.client?.active) {
@@ -12,7 +14,7 @@ class SocketService {
     }
 
     this.client = new Client({
-      brokerURL: 'ws://localhost:8080/ws',
+      brokerURL: wsUrl,
       connectHeaders: {
         Authorization: `Bearer ${accessToken}`
       },
@@ -20,6 +22,7 @@ class SocketService {
       debug: () => undefined,
       onConnect: () => {
         this.reconnectAttempts = 0
+        this.connectListeners.forEach((listener) => listener())
         onConnect?.()
       },
       onWebSocketClose: () => {
@@ -58,6 +61,17 @@ class SocketService {
     })
   }
 
+  isConnected(): boolean {
+    return Boolean(this.client?.connected)
+  }
+
+  onConnect(listener: () => void): () => void {
+    this.connectListeners.add(listener)
+    return () => {
+      this.connectListeners.delete(listener)
+    }
+  }
+
   private scheduleReconnect(accessToken: string, onConnect?: () => void): void {
     this.reconnectAttempts += 1
     const delay = Math.min(1000 * 2 ** (this.reconnectAttempts - 1), 10000)
@@ -69,4 +83,3 @@ class SocketService {
 }
 
 export const socketService = new SocketService()
-

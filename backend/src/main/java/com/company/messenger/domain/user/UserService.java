@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class UserService {
@@ -28,9 +30,15 @@ public class UserService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
     }
 
+    @Transactional(readOnly = true)
+    public List<UserProfileResponse> getDirectory(String userId) {
+        return userRepository.findDirectory(userId).stream()
+                .map(UserProfileResponse::from)
+                .toList();
+    }
+
     @Transactional
     public void markLoggedOut(String userId) {
         userRepository.findByUserId(userId).ifPresent(User::markLoggedOut);
     }
 }
-

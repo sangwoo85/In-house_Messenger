@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getNotifications, markNotificationRead } from './notifications.api'
+import { desktop } from '@/services/desktop'
 
 export function NotificationsPage(): JSX.Element {
   const queryClient = useQueryClient()
@@ -12,7 +13,7 @@ export function NotificationsPage(): JSX.Element {
   useEffect(() => {
     if (notificationsQuery.data) {
       const unread = notificationsQuery.data.items.filter((item) => !item.read).length
-      void window.messengerDesktop.setBadge(unread)
+      void desktop.setBadge(unread)
     }
   }, [notificationsQuery.data])
 
@@ -20,7 +21,7 @@ export function NotificationsPage(): JSX.Element {
     await markNotificationRead(id)
     await queryClient.invalidateQueries({ queryKey: ['notifications'] })
     if (linkUrl) {
-      await window.messengerDesktop.openExternal(linkUrl)
+      await desktop.openExternal(linkUrl)
     }
   }
 
@@ -64,4 +65,3 @@ export function NotificationsPage(): JSX.Element {
     </main>
   )
 }
-

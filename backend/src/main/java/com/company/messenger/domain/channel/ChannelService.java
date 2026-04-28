@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -35,6 +36,18 @@ public class ChannelService {
         LinkedHashSet<String> memberUserIds = new LinkedHashSet<>(request.memberUserIds());
         memberUserIds.add(ownerUserId);
 
+        if (request.type() == ChannelType.DM && memberUserIds.size() == 2) {
+            String targetUserId = memberUserIds.stream()
+                    .filter(userId -> !userId.equals(ownerUserId))
+                    .findFirst()
+                    .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+            ChannelResponse existingDirectMessage = findExistingDirectMessage(ownerUserId, targetUserId);
+            if (existingDirectMessage != null) {
+                return existingDirectMessage;
+            }
+        }
+
         List<User> members = memberUserIds.stream()
                 .map(this::getUser)
                 .toList();
@@ -48,7 +61,7 @@ public class ChannelService {
         }
         channelMemberRepository.saveAll(memberships);
 
-        return toResponse(channel, memberships);
+        return toResponse(channel, memberships, ownerUserId);
     }
 
     @Transactional(readOnly = true)
@@ -109,13 +122,42 @@ public class ChannelService {
                 .toList();
     }
 
-    private ChannelResponse toResponse(Channel channel, List<ChannelMember> memberships) {
+    private ChannelResponse findExistingDirectMessage(String ownerUserId, String targetUserId) {
+        Set<String> expectedMembers = Set.of(ownerUserId, targetUserId);
+
+        return channelMemberRepository.findActiveByUserId(ownerUserId).stream()
+                .map(ChannelMember::getChannel)
+                .filter(channel -> channel.getType() == ChannelType.DM)
+                .map(channel -> {
+                    List<ChannelMember> activeMembers = channelMemberRepository.findActiveMembers(channel.getId());
+                    return new Object[]{channel, activeMembers};
+                })
+                .filter(tuple -> {
+                    @SuppressWarnings("unchecked")
+                    List<ChannelMember> activeMembers = (List<ChannelMember>) tuple[1];
+                    return activeMembers.size() == 2
+                            && activeMembers.stream()
+                            .map(channelMember -> channelMember.getUser().getUserId())
+                            .collect(java.util.stream.Collectors.toSet())
+                            .equals(expectedMembers);
+                })
+                .map(tuple -> toResponse((Channel) tuple[0], castMembers(tuple[1]), ownerUserId))
+                .findFirst()
+                .orElse(null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<ChannelMember> castMembers(Object value) {
+        return (List<ChannelMember>) value;
+    }
+
+    private ChannelResponse toResponse(Channel channel, List<ChannelMember> memberships, String viewerUserId) {
         return new ChannelResponse(
                 channel.getId(),
                 channel.getName(),
                 channel.getType(),
                 memberships.stream().map(member -> member.getUser().getUserId()).toList(),
-                0L
+                unreadCountService.get(channel.getId(), viewerUserId)
         );
     }
 

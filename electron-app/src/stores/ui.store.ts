@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-type ViewMode = 'chat' | 'notifications'
+export type ViewMode = 'users' | 'chat' | 'notifications'
 
 interface UiState {
   viewMode: ViewMode
@@ -8,7 +8,6 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set) => ({
-  viewMode: 'chat',
+  viewMode: 'users',
   setViewMode: (viewMode) => set({ viewMode })
 }))
-

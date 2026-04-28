@@ -31,3 +31,7 @@ export async function login(payload: LoginPayload): Promise<LoginResult> {
   return response.data.data
 }
 
+export async function refreshSession(): Promise<LoginResult> {
+  const response = await http.post<ApiResponse<LoginResult>>('/auth/refresh')
+  return response.data.data
+}

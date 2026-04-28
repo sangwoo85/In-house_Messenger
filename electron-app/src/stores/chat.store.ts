@@ -7,6 +7,7 @@ interface ChatState {
   messages: Record<number, Message[]>
   typingUsers: Record<number, string[]>
   setChannels: (channels: Channel[]) => void
+  upsertChannel: (channel: Channel) => void
   selectChannel: (channelId: number) => void
   setMessages: (channelId: number, messages: Message[]) => void
   appendMessage: (channelId: number, message: Message) => void
@@ -24,6 +25,17 @@ export const useChatStore = create<ChatState>((set) => ({
       channels,
       selectedChannelId: state.selectedChannelId ?? channels[0]?.id ?? null
     })),
+  upsertChannel: (channel) =>
+    set((state) => {
+      const existingIndex = state.channels.findIndex((item) => item.id === channel.id)
+      if (existingIndex === -1) {
+        return { channels: [channel, ...state.channels] }
+      }
+
+      const nextChannels = [...state.channels]
+      nextChannels[existingIndex] = channel
+      return { channels: nextChannels }
+    }),
   selectChannel: (selectedChannelId) => set({ selectedChannelId }),
   setMessages: (channelId, messages) =>
     set((state) => ({ messages: { ...state.messages, [channelId]: messages } })),
