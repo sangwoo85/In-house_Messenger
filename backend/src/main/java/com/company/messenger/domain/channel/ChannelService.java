@@ -6,7 +6,7 @@ import com.company.messenger.domain.message.MessageResponse;
 import com.company.messenger.domain.message.MessageSliceResponse;
 import com.company.messenger.domain.message.UnreadCountService;
 import com.company.messenger.domain.user.User;
-import com.company.messenger.domain.user.UserRepository;
+import com.company.messenger.domain.user.UserService;
 import com.company.messenger.global.exception.BusinessException;
 import com.company.messenger.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +27,7 @@ public class ChannelService {
     private final ChannelMemberRepository channelMemberRepository;
     private final MessageRepository messageRepository;
     private final UnreadCountService unreadCountService;
-    private final UserRepository userRepository;
+    private final UserService userService;
 
     @Transactional
     public ChannelResponse createChannel(String ownerUserId, CreateChannelRequest request) {
@@ -162,7 +162,6 @@ public class ChannelService {
     }
 
     private User getUser(String userId) {
-        return userRepository.findByUserId(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        return userService.getOrCreateDirectoryUser(userId);
     }
 }

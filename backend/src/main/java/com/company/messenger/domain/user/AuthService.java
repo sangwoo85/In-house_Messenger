@@ -33,11 +33,9 @@ public class AuthService {
 
     @Transactional
     public LoginResponse login(LoginRequest request, HttpServletResponse response) {
-        // Temporary local-login bypass:
-        // Uncomment this block to restore real internal authentication.
-        // if (!internalAuthClient.authenticate(request.userId(), request.password())) {
-        //     throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
-        // }
+        if (!internalAuthClient.authenticate(request.userId(), request.password())) {
+            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
+        }
 
         User user = userService.findOrCreateByUserId(request.userId());
         String newSessionId = UUID.randomUUID().toString();

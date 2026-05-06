@@ -48,12 +48,28 @@ public class User {
     }
 
     public static User create(String userId) {
+        return createLoggedIn(userId, userId, null);
+    }
+
+    public static User createLoggedIn(String userId, String nickname, String profileImageUrl) {
         LocalDateTime now = LocalDateTime.now();
         return User.builder()
                 .userId(userId)
-                .nickname(userId)
-                .profileImageUrl(null)
+                .nickname(nickname)
+                .profileImageUrl(profileImageUrl)
                 .status(UserStatus.ONLINE)
+                .createdAt(now)
+                .lastLoginAt(now)
+                .build();
+    }
+
+    public static User createDirectoryUser(String userId, String nickname, String profileImageUrl) {
+        LocalDateTime now = LocalDateTime.now();
+        return User.builder()
+                .userId(userId)
+                .nickname(nickname)
+                .profileImageUrl(profileImageUrl)
+                .status(UserStatus.OFFLINE)
                 .createdAt(now)
                 .lastLoginAt(now)
                 .build();
@@ -64,8 +80,12 @@ public class User {
         this.lastLoginAt = LocalDateTime.now();
     }
 
+    public void syncProfile(String nickname, String profileImageUrl) {
+        this.nickname = nickname;
+        this.profileImageUrl = profileImageUrl;
+    }
+
     public void markLoggedOut() {
         this.status = UserStatus.OFFLINE;
     }
 }
-

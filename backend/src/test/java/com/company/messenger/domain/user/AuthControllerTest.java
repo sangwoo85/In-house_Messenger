@@ -155,6 +155,36 @@ class AuthControllerTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void usersEndpointShouldReturnDirectoryFromExternalSource() throws Exception {
+        when(internalAuthClient.authenticate("user01", "password")).thenReturn(true);
+        when(internalAuthClient.fetchUsers()).thenReturn(java.util.List.of(
+                new InternalAuthClient.ExternalDirectoryUser("user01", "홍길동", null),
+                new InternalAuthClient.ExternalDirectoryUser("user02", "김개발", null)
+        ));
+
+        String loginResponse = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userId": "user01",
+                                  "password": "password"
+                                }
+                                """))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String bearerToken = JsonTestUtils.readJson(loginResponse, "$.data.accessToken");
+
+        mockMvc.perform(get("/api/v1/users")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].userId").value("user02"))
+                .andExpect(jsonPath("$.data[0].nickname").value("김개발"));
+    }
+
     @TestConfiguration
     static class TestBeans {
         @Bean

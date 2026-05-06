@@ -23,8 +23,10 @@ app:
     jwt-secret: ${JWT_SECRET:change-me-change-me-change-me-change-me}
     internal-api-key: ${INTERNAL_API_KEY:change-me}
   external:
-    auth-base-url: ${INTERNAL_AUTH_BASE_URL:https://depl.co.kr}
+    auth-base-url: ${INTERNAL_AUTH_BASE_URL:http://localhost:9090}
     auth-timeout-seconds: 3
+    auth-login-path: ${INTERNAL_AUTH_LOGIN_PATH:/api/v1/login}
+    user-list-path: ${INTERNAL_AUTH_USER_LIST_PATH:/api/v1/getUserList}
 
 ---
 spring:
