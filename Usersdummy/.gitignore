@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Local database credentials belong outside version control.
+/config/*.properties

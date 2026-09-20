@@ -2,6 +2,9 @@ server:
   port: 9090
 
 spring:
+  config:
+    # IntelliJ may start from either the repository root or the Usersdummy directory.
+    import: optional:file:./Usersdummy/config/usersdummy.properties,optional:file:${USERSDUMMY_CONFIG:./config/usersdummy.properties}
   application:
     name: Usersdummy
 

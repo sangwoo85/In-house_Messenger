@@ -1,0 +1,8 @@
+# Copy to usersdummy.properties; use USERSDUMMY_CONFIG for a different absolute path.
+# DummyUsers stays separate from the messenger database (company_messenger).
+spring.datasource.url=jdbc:mysql://127.0.0.1:3307/DummyUsers?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
+spring.datasource.username=root
+spring.datasource.password=${USERSDUMMY_DB_PASSWORD}
+dummy-users.database.bootstrap-url=jdbc:mysql://127.0.0.1:3307/mysql?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
+dummy-users.database.name=DummyUsers
+server.port=9090
