@@ -7,9 +7,15 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "tsc && electron-vite build",
+    "build:web": "tsc --noEmit && vite build --config vite.web.config.ts",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
-    "dist": "electron-builder"
+    "dist": "npm run build && electron-builder",
+    "dist:release": "node scripts/release.cjs",
+    "test:desktop": "npm run build && electron scripts/desktop-smoke.cjs",
+    "test:typing": "npm run build && electron scripts/desktop-smoke.cjs --typing",
+    "test:notifications": "npm run build && electron scripts/notification-smoke.cjs",
+    "test:schedules": "npm run build:web && node scripts/schedule-smoke.cjs"
   },
   "dependencies": {
     "@stomp/stompjs": "^7.2.1",
@@ -41,15 +47,33 @@
       "output": "release"
     },
     "files": [
-      "dist/**",
+      "out/**",
       "dist-electron/**",
       "package.json"
     ],
     "mac": {
-      "target": ["dmg"]
+      "target": [
+        "dmg"
+      ],
+      "icon": "resources/icon.icns",
+      "hardenedRuntime": true,
+      "notarize": false
     },
     "win": {
-      "target": ["nsis"]
-    }
+      "target": [
+        "nsis"
+      ],
+      "icon": "resources/icon.ico"
+    },
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "assets"
+      },
+      {
+        "from": "messenger.properties.example",
+        "to": "messenger.properties.example"
+      }
+    ]
   }
 }

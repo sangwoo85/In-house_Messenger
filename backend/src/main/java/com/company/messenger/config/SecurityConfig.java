@@ -38,6 +38,7 @@ public class SecurityConfig {
                             """);
                 }))
                 .authorizeHttpRequests(auth -> auth
+                        .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
                         .requestMatchers("/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/internal/**").permitAll()
                         .requestMatchers("/ws/**", "/ws").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()

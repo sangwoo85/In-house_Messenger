@@ -1,6 +1,7 @@
 package com.company.messenger.domain.file;
 
 import com.company.messenger.domain.user.JsonTestUtils;
+import com.company.messenger.domain.user.PresenceService;
 import com.company.messenger.domain.user.User;
 import com.company.messenger.domain.user.UserRepository;
 import com.company.messenger.global.auth.RefreshTokenStore;
@@ -13,7 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
@@ -57,12 +58,21 @@ class FileControllerTest {
     @Autowired
     private FileAttachmentRepository fileAttachmentRepository;
 
-    @MockBean
+    @MockitoBean
     private InternalAuthClient internalAuthClient;
+
+    @MockitoBean
+    private PresenceService presenceService;
 
     @BeforeEach
     void setUp() throws Exception {
-        when(internalAuthClient.authenticate(anyString(), anyString())).thenReturn(true);
+        org.mockito.Mockito.when(internalAuthClient.fetchUsers()).thenReturn(java.util.List.of(
+                new InternalAuthClient.ExternalDirectoryUser("user01", "user01", null, "개발팀", "사용자"),
+                new InternalAuthClient.ExternalDirectoryUser("user02", "user02", null, "개발팀", "사용자"),
+                new InternalAuthClient.ExternalDirectoryUser("user03", "user03", null, "개발팀", "사용자")));
+
+        when(internalAuthClient.login(anyString(), anyString())).thenAnswer(call ->
+                new InternalAuthClient.ExternalDirectoryUser(call.getArgument(0), call.getArgument(0), null, "개발팀", "사용자"));
         fileAttachmentRepository.deleteAll();
         userRepository.deleteAll();
         userRepository.save(User.create("user01"));

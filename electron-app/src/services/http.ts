@@ -1,86 +1,46 @@
-import axios from 'axios'
+import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { useAuthStore } from '@/stores/auth.store'
 import { apiBaseUrl } from './runtime'
-import type { AuthUser } from '@/features/auth/auth.api'
+import { authRequest } from './authTransport'
+import type { LoginResult } from '@/features/auth/auth.api'
 
-interface ApiResponse<T> {
-  success: boolean
-  data: T
-  message: string
-  timestamp: string
-}
-
-interface RefreshResult {
-  accessToken: string
-  expiresIn: number
-  user: AuthUser
-}
-
-interface RetryableRequestConfig {
-  _retry?: boolean
-}
-
-const refreshClient = axios.create({
-  baseURL: apiBaseUrl,
-  withCredentials: true
-})
-
-export const http = axios.create({
-  baseURL: apiBaseUrl,
-  withCredentials: true
-})
-
+type RequestConfig = InternalAxiosRequestConfig & { _retry?: boolean; _epoch?: number }
+export const http = axios.create({ baseURL: apiBaseUrl, withCredentials: false, timeout: 20000 })
 let refreshPromise: Promise<string | null> | null = null
+let refreshingEpoch = -1
 
-http.interceptors.request.use((config) => {
-  const accessToken = useAuthStore.getState().accessToken
-  if (accessToken) {
-    config.headers.Authorization = `Bearer ${accessToken}`
-  }
-  return config
+http.interceptors.request.use(config => {
+  const state = useAuthStore.getState()
+  const request = config as RequestConfig
+  request._epoch ??= state.epoch
+  if (request._epoch !== state.epoch) throw new axios.CanceledError('세션이 변경되었습니다.')
+  if (state.accessToken) request.headers.Authorization = `Bearer ${state.accessToken}`
+  return request
 })
 
-http.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const status = error.response?.status as number | undefined
-    const originalRequest = error.config as typeof error.config & RetryableRequestConfig
-    const requestUrl = String(originalRequest?.url ?? '')
-
-    if (
-      status !== 401 ||
-      !originalRequest ||
-      originalRequest._retry ||
-      requestUrl.includes('/auth/login') ||
-      requestUrl.includes('/auth/refresh')
-    ) {
-      return Promise.reject(error)
-    }
-
-    originalRequest._retry = true
-
-    refreshPromise ??= refreshClient
-      .post<ApiResponse<RefreshResult>>('/auth/refresh')
-      .then((response) => {
-        const session = response.data.data
-        useAuthStore.getState().setSession(session.accessToken, session.user)
-        return session.accessToken
-      })
-      .catch(() => {
-        useAuthStore.getState().clearSession()
-        return null
-      })
-      .finally(() => {
-        refreshPromise = null
-      })
-
-    const nextAccessToken = await refreshPromise
-
-    if (!nextAccessToken) {
-      return Promise.reject(error)
-    }
-
-    originalRequest.headers.Authorization = `Bearer ${nextAccessToken}`
-    return http(originalRequest)
+http.interceptors.response.use(response => {
+  if ((response.config as RequestConfig)._epoch !== useAuthStore.getState().epoch) throw new axios.CanceledError('세션이 변경되었습니다.')
+  return response
+}, async error => {
+  const request = error.config as RequestConfig | undefined
+  const state = useAuthStore.getState()
+  if (error.response?.status !== 401 || !request || request._retry || !state.accessToken || request._epoch !== state.epoch) throw error
+  request._retry = true
+  const epoch = state.epoch
+  if (!refreshPromise || refreshingEpoch !== epoch) {
+    refreshingEpoch = epoch
+    const promise = authRequest<LoginResult>('refresh').then(session => {
+      if (useAuthStore.getState().epoch !== epoch) return null
+      useAuthStore.getState().setSession(session.accessToken, session.user)
+      return session.accessToken
+    }).catch(refreshError => {
+      if (useAuthStore.getState().epoch === epoch && refreshError.response?.status === 401) useAuthStore.getState().clearSession()
+      return null
+    }).finally(() => { if (refreshPromise === promise) refreshPromise = null })
+    refreshPromise = promise
   }
-)
+  const token = await refreshPromise
+  if (!token || useAuthStore.getState().epoch !== epoch) throw error
+  request.headers.Authorization = `Bearer ${token}`
+  return http(request)
+})

@@ -19,4 +19,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
             order by u.nickname asc, u.userId asc
             """)
     List<User> findDirectory(String userId);
+    /** Serializes concurrent uploads so profile replacement cannot leave the wrong image attached. */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select u from User u where u.userId = :userId")
+    Optional<User> findByUserIdForUpdate(@org.springframework.data.repository.query.Param("userId") String userId);
 }

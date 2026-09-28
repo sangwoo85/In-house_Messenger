@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 public class UnreadCountService {
 
     private final StringRedisTemplate redisTemplate;
+    private final com.company.messenger.config.RedisKeyspace keyspace;
 
     public void increment(Long channelId, String userId) {
         redisTemplate.opsForValue().increment(key(channelId, userId));
@@ -24,6 +25,6 @@ public class UnreadCountService {
     }
 
     public String key(Long channelId, String userId) {
-        return "unread:" + channelId + ":" + userId;
+        return keyspace.key("unread:" + channelId + ":" + userId);
     }
 }

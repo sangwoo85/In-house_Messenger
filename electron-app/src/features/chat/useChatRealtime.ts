@@ -1,115 +1,107 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth.store'
 import { useChatStore } from '@/stores/chat.store'
 import { useUiStore } from '@/stores/ui.store'
+import type { NotificationItem, NoticeItem } from '@/features/notifications/notifications.api'
 import { socketService } from '@/socket/socketService'
 import { desktop } from '@/services/desktop'
 import type { Message } from '@/features/channels/channels.api'
-import type { NotificationItem } from '@/features/notifications/notifications.api'
+import type { StompSubscription } from '@stomp/stompjs'
 
-interface TypingPayload {
-  channelId: number
-  userId: string
-  typing: boolean
-}
-
+/** Subscribes once per session and updates data before applying desktop delivery options. */
 export function useChatRealtime(): void {
-  const accessToken = useAuthStore((state) => state.accessToken)
-  const userId = useAuthStore((state) => state.user?.userId)
-  const clearSession = useAuthStore((state) => state.clearSession)
-  const channels = useChatStore((state) => state.channels)
-  const selectedChannelId = useChatStore((state) => state.selectedChannelId)
-  const appendMessage = useChatStore((state) => state.appendMessage)
-  const setTypingUsers = useChatStore((state) => state.setTypingUsers)
-  const updateUnreadCount = useChatStore((state) => state.updateUnreadCount)
-  const setViewMode = useUiStore((state) => state.setViewMode)
-  const typingRef = useRef<Record<number, Set<string>>>({})
+  const queryClient = useQueryClient()
+  const accessToken = useAuthStore(state => state.accessToken)
+  const userId = useAuthStore(state => state.user?.userId)
+  const selectedChannelId = useChatStore(state => state.selectedChannelId)
   const [connectionVersion, setConnectionVersion] = useState(0)
 
   useEffect(() => {
-    if (!accessToken) {
-      socketService.disconnect()
-      return
+    if (!accessToken) return
+    let subscriptions: StompSubscription[] = []
+    const clearSubscriptions = () => { subscriptions.forEach(item => { try { item.unsubscribe() } catch { /* Disconnected. */ } }); subscriptions = [] }
+    const expired = () => {
+      useAuthStore.getState().clearSession()
+      void desktop.showNotification('세션 만료', '다시 로그인해 주세요.')
     }
-
-    const unsubscribe = socketService.onConnect(() => {
-      setConnectionVersion((value) => value + 1)
-    })
-
-    socketService.connect(accessToken, () => {
-      setConnectionVersion((value) => value + 1)
-    })
-
-    if (socketService.isConnected()) {
-      setConnectionVersion((value) => value + 1)
+    const connect = () => {
+      clearSubscriptions()
+      const subscribe = (destination: string, callback: (body: string) => void) => {
+        const subscription = socketService.subscribe(destination, frame => callback(frame.body))
+        if (subscription) subscriptions.push(subscription)
+      }
+      // A user queue exists independently of the channel list, including newly-created DMs.
+      subscribe('/user/queue/messages', body => {
+        const { kind, message } = JSON.parse(body) as { kind: 'CREATED' | 'UPDATED' | 'DELETED'; message: Message }
+        const state = useChatStore.getState()
+        const duplicate = (state.messages[message.channelId] ?? []).some(item => item.id === message.id)
+        state.appendMessage(message.channelId, message)
+        const channel = state.channels.find(item => item.id === message.channelId)
+        if (!channel || kind !== 'CREATED') void queryClient.invalidateQueries({ queryKey: ['channels'] })
+        if (kind !== 'CREATED' || duplicate || message.senderUserId === userId) return
+        const reading = state.readingChannelId === message.channelId && document.visibilityState === 'visible' && document.hasFocus()
+        if (!reading) {
+          state.incrementUnreadCount(message.channelId)
+          void desktop.showNotification(channel?.name ?? '새 메시지', `${message.senderUserId}: ${message.content}`)
+        }
+      })
+      subscribe('/user/queue/channel-events', body => {
+        const event = JSON.parse(body) as { channelId: number; kind: string }
+        void queryClient.invalidateQueries({ queryKey: ['channels'] })
+        void queryClient.invalidateQueries({ queryKey: ['schedules', event.channelId] })
+        void queryClient.invalidateQueries({ queryKey: ['schedule-reminders'] })
+        if (event.kind === 'MEMBERSHIP') void queryClient.invalidateQueries({ queryKey: ['messages', event.channelId] })
+      })
+      subscribe('/user/queue/notifications', body => {
+        const item = JSON.parse(body) as NotificationItem
+        void queryClient.invalidateQueries({ queryKey: ['notifications'] })
+        void desktop.showNotification(item.title, item.content, { displayMode: item.displayMode, notificationType: item.notificationType })
+      })
+      subscribe('/topic/notice', body => {
+        const item = JSON.parse(body) as NoticeItem
+        void queryClient.invalidateQueries({ queryKey: ['notices'] })
+        void desktop.showNotification(item.title, item.content, { displayMode: item.displayMode, notificationType: item.notificationType })
+      })
+      subscribe('/user/queue/session-expired', expired)
+      setConnectionVersion(version => version + 1)
+      for (const key of ['channels', 'messages', 'notifications', 'notices', 'users', 'schedules', 'schedule-reminders']) void queryClient.invalidateQueries({ queryKey: [key] })
     }
-
+    const unsubscribeNotificationOpen = desktop.onNotificationOpen(channelId => {
+      if (channelId && useChatStore.getState().channels.some(channel => channel.id === channelId)) {
+        useChatStore.getState().selectChannel(channelId); useUiStore.getState().setViewMode('chat')
+      } else useUiStore.getState().setViewMode('notifications')
+    })
+    const unsubscribeConnect = socketService.onConnect(connect)
+    const unsubscribeExpiry = socketService.onSessionExpired(expired)
+    socketService.connect(accessToken)
+    if (socketService.isConnected()) connect()
     return () => {
-      unsubscribe()
+      unsubscribeNotificationOpen()
+      unsubscribeConnect()
+      unsubscribeExpiry()
+      clearSubscriptions()
       socketService.disconnect()
+      void desktop.clearNotifications()
     }
-  }, [accessToken])
+  }, [accessToken, queryClient, userId])
 
   useEffect(() => {
-    if (!socketService.isConnected()) {
-      return
-    }
-
-    const subscriptions = channels.flatMap((channel) => {
-      const messageSubscription = socketService.subscribe(`/topic/channel/${channel.id}`, (frame) => {
-        const message = JSON.parse(frame.body) as Message
-        appendMessage(channel.id, message)
-        if (message.senderUserId !== userId) {
-          const nextUnread = selectedChannelId === channel.id ? 0 : channel.unreadCount + 1
-          updateUnreadCount(channel.id, nextUnread)
-          void desktop.showNotification(
-            channel.name ?? '새 메시지',
-            `${message.senderUserId ?? 'system'}: ${message.content}`
-          )
-          const totalUnread = channels.reduce((sum, item) => {
-            if (item.id === channel.id) {
-              return sum + nextUnread
-            }
-            return sum + item.unreadCount
-          }, 0)
-          void desktop.setBadge(totalUnread)
-        }
-      })
-
-      const typingSubscription = socketService.subscribe(`/topic/channel/${channel.id}/typing`, (frame) => {
-        const payload = JSON.parse(frame.body) as TypingPayload
-        if (payload.userId === userId) {
-          return
-        }
-
-        const current = typingRef.current[channel.id] ?? new Set<string>()
-        if (payload.typing) {
-          current.add(payload.userId)
-        } else {
-          current.delete(payload.userId)
-        }
-        typingRef.current[channel.id] = current
-        setTypingUsers(channel.id, Array.from(current))
-      })
-
-      return [messageSubscription, typingSubscription].filter(Boolean)
+    if (!selectedChannelId || !socketService.isConnected()) return
+    const timers = new Map<string, number>()
+    const update = () => useChatStore.getState().setTypingUsers(selectedChannelId, [...timers.keys()])
+    const subscription = socketService.subscribe(`/topic/channel/${selectedChannelId}/typing`, frame => {
+      const event = JSON.parse(frame.body) as { userId: string; typing: boolean }
+      if (event.userId === userId) return
+      window.clearTimeout(timers.get(event.userId))
+      timers.delete(event.userId)
+      if (event.typing) timers.set(event.userId, window.setTimeout(() => { timers.delete(event.userId); update() }, 5000))
+      update()
     })
-
-    const notificationSubscription = socketService.subscribe('/user/queue/notifications', (frame) => {
-      const payload = JSON.parse(frame.body) as NotificationItem
-      void desktop.showNotification(payload.title, payload.content)
-      setViewMode('notifications')
-    })
-
-    const sessionExpiredSubscription = socketService.subscribe('/user/queue/session-expired', async () => {
-      await desktop.showNotification('세션 만료', '다른 기기에서 로그인되어 현재 세션이 종료되었습니다.')
-      clearSession()
-    })
-
     return () => {
-      subscriptions.forEach((subscription) => subscription?.unsubscribe())
-      notificationSubscription?.unsubscribe()
-      sessionExpiredSubscription?.unsubscribe()
+      timers.forEach(timer => window.clearTimeout(timer))
+      useChatStore.getState().setTypingUsers(selectedChannelId, [])
+      try { subscription?.unsubscribe() } catch { /* Disconnected. */ }
     }
-  }, [appendMessage, channels, clearSession, connectionVersion, selectedChannelId, setTypingUsers, setViewMode, updateUnreadCount, userId])
+  }, [selectedChannelId, connectionVersion, userId])
 }

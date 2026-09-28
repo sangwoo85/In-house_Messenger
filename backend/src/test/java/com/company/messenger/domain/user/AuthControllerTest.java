@@ -11,7 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
@@ -47,24 +47,40 @@ class AuthControllerTest {
     @Autowired
     private RefreshTokenStore refreshTokenStore;
 
-    @MockBean
+    @MockitoBean
     private InternalAuthClient internalAuthClient;
+
+    @MockitoBean
+    private PresenceService presenceService;
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.when(internalAuthClient.fetchUsers()).thenReturn(java.util.List.of(
+                new InternalAuthClient.ExternalDirectoryUser("user01", "user01", null, "개발팀", "사용자"),
+                new InternalAuthClient.ExternalDirectoryUser("user02", "user02", null, "개발팀", "사용자"),
+                new InternalAuthClient.ExternalDirectoryUser("user03", "user03", null, "개발팀", "사용자")));
+
         sessionRegistry.delete("user01");
         refreshTokenStore.delete("user01");
+        when(presenceService.getPresence(org.mockito.ArgumentMatchers.anyList()))
+                .thenAnswer(invocation -> {
+                    java.util.List<String> userIds = invocation.getArgument(0);
+                    return userIds.stream()
+                            .map(userId -> new PresenceResponse(userId, UserStatus.OFFLINE))
+                            .toList();
+                });
     }
 
     @Test
     void loginShouldIssueAccessTokenAndRefreshCookie() throws Exception {
-        when(internalAuthClient.authenticate("user01", "password")).thenReturn(true);
+        when(internalAuthClient.login("user01", "password")).thenReturn(
+                new InternalAuthClient.ExternalDirectoryUser("user01", "로그인 응답 이름", null, "인사부", "직원", "HR"));
 
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "userId": "user01",
+                                  "emprId": "user01",
                                   "password": "password"
                                 }
                                 """))
@@ -72,18 +88,22 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.accessToken").isString())
                 .andExpect(jsonPath("$.data.user.userId").value("user01"))
+                .andExpect(jsonPath("$.data.user.nickname").value("로그인 응답 이름"))
+                .andExpect(jsonPath("$.data.user.department").value("인사부"))
+                .andExpect(jsonPath("$.data.user.departmentId").value("HR"))
                 .andExpect(cookie().exists(AuthService.REFRESH_COOKIE_NAME));
     }
 
     @Test
     void refreshShouldIssueNewAccessTokenWhenRefreshCookieIsValid() throws Exception {
-        when(internalAuthClient.authenticate("user01", "password")).thenReturn(true);
+        when(internalAuthClient.login("user01", "password")).thenReturn(
+                new InternalAuthClient.ExternalDirectoryUser("user01", "로그인 응답 이름", null, "인사부", "직원", "HR"));
 
         MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "userId": "user01",
+                                  "emprId": "user01",
                                   "password": "password"
                                 }
                                 """))
@@ -100,13 +120,14 @@ class AuthControllerTest {
 
     @Test
     void usersMeShouldRequireValidBearerToken() throws Exception {
-        when(internalAuthClient.authenticate("user01", "password")).thenReturn(true);
+        when(internalAuthClient.login("user01", "password")).thenReturn(
+                new InternalAuthClient.ExternalDirectoryUser("user01", "로그인 응답 이름", null, "인사부", "직원", "HR"));
 
         String accessToken = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "userId": "user01",
+                                  "emprId": "user01",
                                   "password": "password"
                                 }
                                 """))
@@ -124,13 +145,14 @@ class AuthControllerTest {
 
     @Test
     void secondLoginShouldReplaceSessionAndInvalidatePreviousAccessToken() throws Exception {
-        when(internalAuthClient.authenticate(anyString(), anyString())).thenReturn(true);
+        when(internalAuthClient.login(anyString(), anyString())).thenAnswer(invocation ->
+                new InternalAuthClient.ExternalDirectoryUser(invocation.getArgument(0), "로그인 응답 이름", null, "인사부", "직원", "HR"));
 
         String firstResponse = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "userId": "user01",
+                                  "emprId": "user01",
                                   "password": "password"
                                 }
                                 """))
@@ -144,7 +166,7 @@ class AuthControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "userId": "user01",
+                                  "emprId": "user01",
                                   "password": "password"
                                 }
                                 """))
@@ -157,17 +179,18 @@ class AuthControllerTest {
 
     @Test
     void usersEndpointShouldReturnDirectoryFromExternalSource() throws Exception {
-        when(internalAuthClient.authenticate("user01", "password")).thenReturn(true);
+        when(internalAuthClient.login("user01", "password")).thenReturn(
+                new InternalAuthClient.ExternalDirectoryUser("user01", "로그인 응답 이름", null, "인사부", "직원", "HR"));
         when(internalAuthClient.fetchUsers()).thenReturn(java.util.List.of(
-                new InternalAuthClient.ExternalDirectoryUser("user01", "홍길동", null),
-                new InternalAuthClient.ExternalDirectoryUser("user02", "김개발", null)
+                new InternalAuthClient.ExternalDirectoryUser("user01", "홍길동", null, "영업팀", "사용자"),
+                new InternalAuthClient.ExternalDirectoryUser("user02", "김개발", null, "개발팀", "개발자")
         ));
 
         String loginResponse = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "userId": "user01",
+                                  "emprId": "user01",
                                   "password": "password"
                                 }
                                 """))
@@ -182,7 +205,9 @@ class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(1))
                 .andExpect(jsonPath("$.data[0].userId").value("user02"))
-                .andExpect(jsonPath("$.data[0].nickname").value("김개발"));
+                .andExpect(jsonPath("$.data[0].nickname").value("김개발"))
+                .andExpect(jsonPath("$.data[0].department").value("개발팀"))
+                .andExpect(jsonPath("$.data[0].userGroup").value("개발자"));
     }
 
     @TestConfiguration

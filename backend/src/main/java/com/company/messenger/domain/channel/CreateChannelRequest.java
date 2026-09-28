@@ -5,10 +5,11 @@ import jakarta.validation.constraints.NotNull;
 
 import java.util.List;
 
+/** Defines a direct chat or named group; the authenticated creator is added to the supplied recipients. */
 public record CreateChannelRequest(
-        String name,
+        @jakarta.validation.constraints.Size(max = 100) String name,
         @NotNull ChannelType type,
-        @NotEmpty List<String> memberUserIds
+        @NotEmpty @jakarta.validation.constraints.Size(max = 100) List<@jakarta.validation.constraints.NotBlank String> memberUserIds
 ) {
 }
 

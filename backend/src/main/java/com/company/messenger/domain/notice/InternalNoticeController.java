@@ -13,22 +13,23 @@ public class InternalNoticeController {
     private final InternalApiGuard internalApiGuard;
     private final NoticeService noticeService;
 
+    /** Accepts a company notice only after the internal API key is verified. */
     @PostMapping("/notice/broadcast")
     public ApiResponse<NoticeResponse> broadcast(
-            @RequestHeader("X-Internal-Api-Key") String apiKey,
+            @RequestHeader(value = "X-Internal-Api-Key", required = false) String apiKey,
             @Valid @RequestBody BroadcastNoticeRequest request
     ) {
         internalApiGuard.verify(apiKey);
         return ApiResponse.ok(noticeService.broadcast(request));
     }
 
+    /** Stores personal business notifications regardless of the requested desktop mode. */
     @PostMapping("/notify/user")
     public ApiResponse<UserNotificationResponse> notifyUser(
-            @RequestHeader("X-Internal-Api-Key") String apiKey,
+            @RequestHeader(value = "X-Internal-Api-Key", required = false) String apiKey,
             @Valid @RequestBody NotifyUserRequest request
     ) {
         internalApiGuard.verify(apiKey);
         return ApiResponse.ok(noticeService.notifyUser(request));
     }
 }
-

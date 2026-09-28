@@ -10,15 +10,17 @@ import com.company.messenger.global.auth.SessionExpiryNotifier;
 import com.company.messenger.global.auth.SessionRegistry;
 import com.company.messenger.global.external.InternalAuthClient;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
@@ -67,12 +69,19 @@ class PresenceAndUnreadRedisIntegrationTest {
     @Autowired
     private StringRedisTemplate redisTemplate;
 
-    @MockBean
+    @MockitoBean
     private InternalAuthClient internalAuthClient;
 
     @BeforeEach
     void setUp() {
-        when(internalAuthClient.authenticate(anyString(), anyString())).thenReturn(true);
+        org.mockito.Mockito.when(internalAuthClient.fetchUsers()).thenReturn(java.util.List.of(
+                new InternalAuthClient.ExternalDirectoryUser("user01", "user01", null, "개발팀", "사용자"),
+                new InternalAuthClient.ExternalDirectoryUser("user02", "user02", null, "개발팀", "사용자"),
+                new InternalAuthClient.ExternalDirectoryUser("user03", "user03", null, "개발팀", "사용자")));
+
+        assumeRedisAvailable();
+        when(internalAuthClient.login(anyString(), anyString())).thenAnswer(call ->
+                new InternalAuthClient.ExternalDirectoryUser(call.getArgument(0), call.getArgument(0), null, "개발팀", "사용자"));
 
         messageRepository.deleteAll();
         channelMemberRepository.deleteAll();
@@ -81,13 +90,27 @@ class PresenceAndUnreadRedisIntegrationTest {
         ensureUser("user01");
         ensureUser("user02");
 
-        Set<String> keys = redisTemplate.keys("presence:*");
+        Set<String> keys = redisTemplate.keys("company-messenger:presence:*");
         if (keys != null && !keys.isEmpty()) {
             redisTemplate.delete(keys);
         }
-        keys = redisTemplate.keys("unread:*");
+        keys = redisTemplate.keys("company-messenger:unread:*");
         if (keys != null && !keys.isEmpty()) {
             redisTemplate.delete(keys);
+        }
+    }
+
+    private void assumeRedisAvailable() {
+        RedisConnection connection = null;
+        try {
+            connection = java.util.Objects.requireNonNull(redisTemplate.getConnectionFactory()).getConnection();
+            connection.ping();
+        } catch (RuntimeException exception) {
+            Assumptions.assumeTrue(false, "Redis is not running; skipping Redis integration tests");
+        } finally {
+            if (connection != null) {
+                connection.close();
+            }
         }
     }
 

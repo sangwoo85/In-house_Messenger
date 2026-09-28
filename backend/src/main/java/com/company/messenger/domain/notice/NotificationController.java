@@ -13,6 +13,7 @@ public class NotificationController {
 
     private final NoticeService noticeService;
 
+    /** Lists authenticated-user history, including silent delivery entries. */
     @GetMapping
     public ApiResponse<UserNotificationPageResponse> getNotifications(
             @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
@@ -22,6 +23,7 @@ public class NotificationController {
         return ApiResponse.ok(noticeService.getNotifications(authenticatedUser.userId(), page, size));
     }
 
+    /** Changes the read state only for a notification owned by the authenticated user. */
     @PatchMapping("/{id}/read")
     public ApiResponse<Void> markRead(
             @AuthenticationPrincipal AuthenticatedUser authenticatedUser,

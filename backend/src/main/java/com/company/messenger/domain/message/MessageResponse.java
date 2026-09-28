@@ -1,6 +1,7 @@
 package com.company.messenger.domain.message;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record MessageResponse(
         Long id,
@@ -10,9 +11,18 @@ public record MessageResponse(
         MessageType type,
         MessageAttachmentResponse attachment,
         LocalDateTime createdAt,
-        boolean deleted
+        boolean deleted,
+        LocalDateTime updatedAt,
+        String clientRequestId,
+        List<String> readUserIds,
+        long unreadCount,
+        List<MessageReactionResponse> reactions,
+        boolean deletable,
+        MessageReplyResponse replyTo
 ) {
-    public static MessageResponse from(Message message) {
+    /** Builds a response with the separately loaded permanent read and reaction details. */
+    public static MessageResponse from(Message message, List<String> readers, long unreadCount,
+                                       List<MessageReactionResponse> reactions, MessageReplyResponse replyTo) {
         return new MessageResponse(
                 message.getId(),
                 message.getChannel().getId(),
@@ -30,7 +40,14 @@ public record MessageResponse(
                         )
                         : null,
                 message.getCreatedAt(),
-                message.isDeleted()
+                message.isDeleted(),
+                message.getUpdatedAt(),
+                message.getClientRequestId(),
+                readers,
+                unreadCount,
+                reactions,
+                !message.isDeleted() && readers.isEmpty() && message.getSender() != null,
+                message.isDeleted() ? null : replyTo
         );
     }
 }

@@ -8,6 +8,16 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleUploadLimit(org.springframework.web.multipart.MaxUploadSizeExceededException exception) {
+        return ResponseEntity.status(413).body(ErrorResponse.from(ErrorCode.FILE_TOO_LARGE));
+    }
+
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConflict(org.springframework.dao.DataIntegrityViolationException exception) {
+        return ResponseEntity.status(409).body(ErrorResponse.from(ErrorCode.CONFLICT));
+    }
+
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException exception) {
         return ResponseEntity

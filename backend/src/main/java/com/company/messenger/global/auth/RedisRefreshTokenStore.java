@@ -12,6 +12,7 @@ import java.util.Optional;
 public class RedisRefreshTokenStore implements RefreshTokenStore {
 
     private final StringRedisTemplate redisTemplate;
+    private final com.company.messenger.config.RedisKeyspace keyspace;
 
     @Override
     public void save(String userId, String refreshToken, Duration ttl) {
@@ -29,6 +30,6 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
     }
 
     private String key(String userId) {
-        return "refresh:" + userId;
+        return keyspace.key("refresh:" + userId);
     }
 }

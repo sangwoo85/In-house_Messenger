@@ -5,10 +5,10 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: '#1D6FE8',
-        'primary-dark': '#1558C0',
-        sidebar: '#1E2A3B',
-        'chat-bg': '#F0F4F8'
+        primary: '#3266DC',
+        'primary-dark': '#2854BA',
+        sidebar: '#17283F',
+        'chat-bg': '#FFFFFF'
       }
     }
   },

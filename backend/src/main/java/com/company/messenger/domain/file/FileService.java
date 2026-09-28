@@ -17,11 +17,13 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.UUID;
 
+/** Stores attachment bytes outside the database and authorizes access through message sharing. */
 @Service
 @RequiredArgsConstructor
 public class FileService {
@@ -29,7 +31,14 @@ public class FileService {
     private final FileAttachmentRepository fileAttachmentRepository;
     private final UserRepository userRepository;
     private final FileProperties fileProperties;
+    private final com.company.messenger.domain.message.MessageRepository messageRepository;
 
+    /**
+     * Stores an authenticated upload under a generated name and records its owner.
+     * @param userId authenticated employee ID
+     * @param file uploaded attachment, bounded by the configured size limit
+     * @return metadata used when the sender attaches the file to a message
+     */
     @Transactional
     public FileUploadResponse upload(String userId, MultipartFile file) {
         validate(file);
@@ -39,15 +48,18 @@ public class FileService {
 
         try {
             Files.createDirectories(fileProperties.storageDirectory());
-            String extension = StringUtils.getFilenameExtension(file.getOriginalFilename());
+            String originalName = originalName(file);
+            String extension = StringUtils.getFilenameExtension(originalName);
             String storedFileName = UUID.randomUUID() + (extension != null ? "." + extension : "");
             Path storedPath = fileProperties.storageDirectory().resolve(storedFileName);
-            Files.copy(file.getInputStream(), storedPath, StandardCopyOption.REPLACE_EXISTING);
+            try (InputStream inputStream = file.getInputStream()) {
+                Files.copy(inputStream, storedPath, StandardCopyOption.REPLACE_EXISTING);
+            }
 
             FileAttachment saved = fileAttachmentRepository.save(FileAttachment.create(
-                    file.getOriginalFilename(),
+                    originalName,
                     storedPath.toString(),
-                    file.getContentType() != null ? file.getContentType() : MediaType.APPLICATION_OCTET_STREAM_VALUE,
+                    mimeType(file),
                     file.getSize(),
                     uploader
             ));
@@ -58,6 +70,12 @@ public class FileService {
         }
     }
 
+    /**
+     * Grants access only to the uploader or an active member of a channel sharing this file.
+     * @param userId authenticated employee ID
+     * @param fileId stored attachment ID
+     * @return bytes with a safe download filename
+     */
     @Transactional(readOnly = true)
     public ResponseEntity<Resource> download(String userId, Long fileId) {
         userRepository.findByUserId(userId)
@@ -66,20 +84,26 @@ public class FileService {
         FileAttachment fileAttachment = fileAttachmentRepository.findById(fileId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND));
 
+        if (!fileAttachment.getUploader().getUserId().equals(userId)
+                && messageRepository.countAccessibleAttachment(fileId, userId) == 0) {
+            throw new BusinessException(ErrorCode.FILE_ACCESS_DENIED);
+        }
+
         Resource resource = new FileSystemResource(fileAttachment.getStoredPath());
         if (!resource.exists()) {
             throw new BusinessException(ErrorCode.FILE_NOT_FOUND);
         }
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
-                        .filename(fileAttachment.getOriginalName())
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename(fileAttachment.getOriginalName(), java.nio.charset.StandardCharsets.UTF_8)
                         .build()
                         .toString())
-                .contentType(MediaType.parseMediaType(fileAttachment.getMimeType()))
+                .contentType(parseMediaType(fileAttachment.getMimeType()))
                 .body(resource);
     }
 
+    /** Rejects empty or oversized files before writing any bytes. */
     private void validate(MultipartFile file) {
         if (file.isEmpty()) {
             throw new BusinessException(ErrorCode.FILE_EMPTY);
@@ -91,8 +115,30 @@ public class FileService {
         }
     }
 
+    /** Chooses the image limit; serving always remains behind authorization. */
     private boolean isImage(MultipartFile file) {
         return file.getContentType() != null && file.getContentType().startsWith("image/");
     }
-}
 
+    /** Removes path components from the client-supplied display filename. */
+    private String originalName(MultipartFile file) {
+        String name = StringUtils.getFilename(StringUtils.cleanPath(
+                file.getOriginalFilename() != null ? file.getOriginalFilename() : ""
+        ));
+        return StringUtils.hasText(name) ? name : "file";
+    }
+
+    /** Normalizes the declared content type without using it as an authorization decision. */
+    private String mimeType(MultipartFile file) {
+        return parseMediaType(file.getContentType()).toString();
+    }
+
+    /** Treats missing or malformed MIME values as generic binary data. */
+    private MediaType parseMediaType(String value) {
+        try {
+            return value != null ? MediaType.parseMediaType(value) : MediaType.APPLICATION_OCTET_STREAM;
+        } catch (IllegalArgumentException exception) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
+    }
+}

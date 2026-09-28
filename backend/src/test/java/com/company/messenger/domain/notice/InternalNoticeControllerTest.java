@@ -2,6 +2,9 @@ package com.company.messenger.domain.notice;
 
 import com.company.messenger.domain.user.User;
 import com.company.messenger.domain.user.UserRepository;
+import com.company.messenger.domain.user.PresenceResponse;
+import com.company.messenger.domain.user.PresenceService;
+import com.company.messenger.domain.user.UserStatus;
 import com.company.messenger.global.auth.RefreshTokenStore;
 import com.company.messenger.global.auth.SessionExpiryNotifier;
 import com.company.messenger.global.auth.SessionRegistry;
@@ -12,7 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
@@ -53,15 +56,31 @@ class InternalNoticeControllerTest {
     @Autowired
     private UserNotificationRepository userNotificationRepository;
 
-    @MockBean
+    @MockitoBean
     private InternalAuthClient internalAuthClient;
 
-    @MockBean
+    @MockitoBean
     private SimpMessagingTemplate simpMessagingTemplate;
+
+    @MockitoBean
+    private PresenceService presenceService;
 
     @BeforeEach
     void setUp() {
-        when(internalAuthClient.authenticate(anyString(), anyString())).thenReturn(true);
+        org.mockito.Mockito.when(internalAuthClient.fetchUsers()).thenReturn(java.util.List.of(
+                new InternalAuthClient.ExternalDirectoryUser("user01", "user01", null, "개발팀", "사용자"),
+                new InternalAuthClient.ExternalDirectoryUser("user02", "user02", null, "개발팀", "사용자"),
+                new InternalAuthClient.ExternalDirectoryUser("user03", "user03", null, "개발팀", "사용자")));
+
+        when(internalAuthClient.login(anyString(), anyString())).thenAnswer(invocation ->
+                new InternalAuthClient.ExternalDirectoryUser(invocation.getArgument(0), invocation.getArgument(0), null, "개발팀", "사용자"));
+        when(presenceService.getPresence(org.mockito.ArgumentMatchers.anyList()))
+                .thenAnswer(invocation -> {
+                    java.util.List<String> userIds = invocation.getArgument(0);
+                    return userIds.stream()
+                            .map(userId -> new PresenceResponse(userId, UserStatus.OFFLINE))
+                            .toList();
+                });
         userNotificationRepository.deleteAll();
         noticeRepository.deleteAll();
         userRepository.deleteAll();
@@ -81,10 +100,12 @@ class InternalNoticeControllerTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.title").value("공지 제목"));
+                .andExpect(jsonPath("$.data.title").value("공지 제목"))
+                .andExpect(jsonPath("$.data.notificationType").value("GENERAL"))
+                .andExpect(jsonPath("$.data.displayMode").value("SYSTEM"));
 
         assertThat(noticeRepository.count()).isEqualTo(1);
-        verify(simpMessagingTemplate).convertAndSend(org.mockito.ArgumentMatchers.eq("/topic/notice"), org.mockito.ArgumentMatchers.any(NoticeResponse.class));
+        verify(simpMessagingTemplate).convertAndSend(org.mockito.ArgumentMatchers.eq("/topic/notice"), org.mockito.ArgumentMatchers.any(NoticeResponse.class), org.mockito.ArgumentMatchers.<String, Object>anyMap());
     }
 
     @Test
@@ -148,12 +169,85 @@ class InternalNoticeControllerTest {
                 .andExpect(jsonPath("$.code").value("INTERNAL_001"));
     }
 
+    @Test
+    void missingInternalApiKeyShouldBeRejected() throws Exception {
+        mockMvc.perform(post("/api/v1/internal/notice/broadcast")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "공지 제목",
+                                  "content": "공지 내용",
+                                  "sender": "시스템"
+                                }
+                                """))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INTERNAL_001"));
+    }
+
+    /** Delivery options must survive HTTP, persistence, and the user's history unchanged. */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(NotificationDisplayMode.class)
+    void deliveryOptionsRemainInHistoryForEveryMode(NotificationDisplayMode mode) throws Exception {
+        mockMvc.perform(post("/api/v1/internal/notify/user")
+                        .header("X-Internal-Api-Key", "change-me")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"targetUserId":"user01","title":"결재 요청","content":"확인해 주세요",
+                                 "notificationType":"APPROVAL","displayMode":"%s"}
+                                """.formatted(mode)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.notificationType").value("APPROVAL"))
+                .andExpect(jsonPath("$.data.displayMode").value(mode.name()));
+
+        assertThat(userNotificationRepository.findAll()).singleElement().satisfies(item -> {
+            assertThat(item.getNotificationType()).isEqualTo("APPROVAL");
+            assertThat(item.getDisplayMode()).isEqualTo(mode);
+        });
+        String accessToken = loginAndGetAccessToken();
+        mockMvc.perform(get("/api/v1/notifications").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.unreadCount").value(1))
+                .andExpect(jsonPath("$.data.items[0].displayMode").value(mode.name()));
+    }
+
+    /** Company-wide alerts use the same display options as personal notifications. */
+    @Test
+    void broadcastPersistsAlwaysOnTopOptions() throws Exception {
+        mockMvc.perform(post("/api/v1/internal/notice/broadcast")
+                        .header("X-Internal-Api-Key", "change-me")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"점검 안내","content":"시스템 점검","sender":"업무 시스템",
+                                 "notificationType":"MAINTENANCE","displayMode":"ALWAYS_ON_TOP"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.displayMode").value("ALWAYS_ON_TOP"));
+        assertThat(noticeRepository.findAll()).singleElement().satisfies(item -> {
+            assertThat(item.getNotificationType()).isEqualTo("MAINTENANCE");
+            assertThat(item.getDisplayMode()).isEqualTo(NotificationDisplayMode.ALWAYS_ON_TOP);
+        });
+    }
+
+    /** Invalid options are rejected instead of silently choosing another presentation. */
+    @Test
+    void invalidDisplayModeDoesNotPersist() throws Exception {
+        mockMvc.perform(post("/api/v1/internal/notify/user")
+                        .header("X-Internal-Api-Key", "change-me")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"targetUserId":"user01","title":"결재","content":"확인","displayMode":"UNKNOWN"}
+                                """))
+                .andExpect(status().isBadRequest());
+        assertThat(userNotificationRepository.count()).isZero();
+    }
+
+    /** Obtains a real application JWT while the external business login is stubbed. */
     private String loginAndGetAccessToken() throws Exception {
         String response = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "userId": "user01",
+                                  "emprId": "user01",
                                   "password": "password"
                                 }
                                 """))

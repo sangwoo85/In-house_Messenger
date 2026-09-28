@@ -1,35 +1,38 @@
-import { Client, IMessage, StompSubscription } from '@stomp/stompjs'
+import { Client, IMessage, ReconnectionTimeMode, StompSubscription } from '@stomp/stompjs'
 import { wsUrl } from '@/services/runtime'
 
 type MessageCallback = (message: IMessage) => void
 
 class SocketService {
   private client: Client | null = null
-  private reconnectAttempts = 0
+  private accessToken: string | null = null
+  private expiryListeners = new Set<() => void>()
   private connectListeners = new Set<() => void>()
 
-  connect(accessToken: string, onConnect?: () => void): void {
+  connect(accessToken: string): void {
+    if (this.client?.active && this.accessToken !== accessToken) {
+      this.disconnect()
+    }
+
     if (this.client?.active) {
       return
     }
 
+    this.accessToken = accessToken
     this.client = new Client({
       brokerURL: wsUrl,
       connectHeaders: {
         Authorization: `Bearer ${accessToken}`
       },
-      reconnectDelay: 0,
+      reconnectDelay: 1000,
+      maxReconnectDelay: 10000,
+      reconnectTimeMode: ReconnectionTimeMode.EXPONENTIAL,
       debug: () => undefined,
+      onWebSocketClose: event => {
+        if (event.code === 1008) this.expiryListeners.forEach(listener => listener())
+      },
       onConnect: () => {
-        this.reconnectAttempts = 0
         this.connectListeners.forEach((listener) => listener())
-        onConnect?.()
-      },
-      onWebSocketClose: () => {
-        this.scheduleReconnect(accessToken, onConnect)
-      },
-      onStompError: () => {
-        this.scheduleReconnect(accessToken, onConnect)
       }
     })
 
@@ -39,7 +42,7 @@ class SocketService {
   disconnect(): void {
     void this.client?.deactivate()
     this.client = null
-    this.reconnectAttempts = 0
+    this.accessToken = null
   }
 
   subscribe(destination: string, callback: MessageCallback): StompSubscription | null {
@@ -50,19 +53,25 @@ class SocketService {
     return this.client.subscribe(destination, callback)
   }
 
-  publish(destination: string, body: unknown): void {
+  publish(destination: string, body: unknown): boolean {
     if (!this.client?.connected) {
-      return
+      return false
     }
 
     this.client.publish({
       destination,
       body: JSON.stringify(body)
     })
+    return true
   }
 
   isConnected(): boolean {
     return Boolean(this.client?.connected)
+  }
+
+  onSessionExpired(listener: () => void): () => void {
+    this.expiryListeners.add(listener)
+    return () => { this.expiryListeners.delete(listener) }
   }
 
   onConnect(listener: () => void): () => void {
@@ -70,15 +79,6 @@ class SocketService {
     return () => {
       this.connectListeners.delete(listener)
     }
-  }
-
-  private scheduleReconnect(accessToken: string, onConnect?: () => void): void {
-    this.reconnectAttempts += 1
-    const delay = Math.min(1000 * 2 ** (this.reconnectAttempts - 1), 10000)
-    window.setTimeout(() => {
-      this.disconnect()
-      this.connect(accessToken, onConnect)
-    }, delay)
   }
 }
 

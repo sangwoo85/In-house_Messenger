@@ -1,0 +1,9 @@
+# Set secrets as environment variables, or replace placeholders in this protected file.
+app.security.jwt-secret=${MESSENGER_JWT_SECRET}
+app.security.internal-api-key=${MESSENGER_INTERNAL_API_KEY}
+app.auth.access-token-expiration-minutes=15
+app.auth.refresh-token-expiration-days=7
+# true for HTTPS; false only if the internal deployment intentionally uses HTTP.
+app.auth.cookie-secure=true
+# Exact browser origins, if a browser frontend is deployed. Desktop auth uses main-process IPC.
+app.web.allowed-origins=https://messenger.internal

@@ -1,0 +1,13 @@
+server.address=0.0.0.0
+server.port=8082
+server.forward-headers-strategy=framework
+app.file.storage-path=/var/lib/company-messenger/uploads
+app.file.image-max-bytes=10485760
+app.file.other-max-bytes=52428800
+# Profile uploads are decoded and stored as PNG; dimensions are checked before decoding.
+app.profile.image-max-bytes=5242880
+app.profile.image-max-dimension=4096
+spring.servlet.multipart.max-file-size=50MB
+spring.servlet.multipart.max-request-size=52MB
+logging.level.root=INFO
+logging.file.name=/var/log/company-messenger/messenger.log

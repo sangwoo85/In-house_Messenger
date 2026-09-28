@@ -1,0 +1,24 @@
+[Unit]
+Description=Company Messenger
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=messenger
+Group=messenger
+WorkingDirectory=/opt/company-messenger
+Environment=MESSENGER_CONFIG=/etc/company-messenger/messenger.properties
+EnvironmentFile=/etc/company-messenger/secrets.env
+ExecStart=/opt/company-messenger/start-backend.sh
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/company-messenger /var/log/company-messenger
+
+[Install]
+WantedBy=multi-user.target

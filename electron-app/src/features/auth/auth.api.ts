@@ -1,7 +1,8 @@
-import { http } from '@/services/http'
+import { authRequest } from '@/services/authTransport'
+import { useAuthStore } from '@/stores/auth.store'
 
 export interface LoginPayload {
-  userId: string
+  emprId: string
   password: string
 }
 
@@ -10,6 +11,9 @@ export interface AuthUser {
   userId: string
   nickname: string
   profileImageUrl: string | null
+  departmentId?: string | null
+  department: string | null
+  userGroup: string | null
   status: 'ONLINE' | 'OFFLINE' | 'AWAY'
 }
 
@@ -19,19 +23,18 @@ export interface LoginResult {
   user: AuthUser
 }
 
-interface ApiResponse<T> {
-  success: boolean
-  data: T
-  message: string
-  timestamp: string
-}
-
+/** 업무 시스템 사번과 비밀번호를 Electron 인증 경로로 전달한다. */
 export async function login(payload: LoginPayload): Promise<LoginResult> {
-  const response = await http.post<ApiResponse<LoginResult>>('/auth/login', payload)
-  return response.data.data
+  return authRequest<LoginResult>('login', payload)
 }
 
+/** HttpOnly Refresh Token으로 세션을 복구한다. */
 export async function refreshSession(): Promise<LoginResult> {
-  const response = await http.post<ApiResponse<LoginResult>>('/auth/refresh')
-  return response.data.data
+  return authRequest<LoginResult>('refresh')
+}
+
+/** 서버 로그아웃 실패 시에도 이 장치의 세션은 제거한다. */
+export async function logout(): Promise<void> {
+  try { await authRequest<null>('logout', undefined, useAuthStore.getState().accessToken ?? undefined) }
+  finally { useAuthStore.getState().clearSession() }
 }

@@ -1,0 +1,3 @@
+# Copy all *.properties.example files in this directory to *.properties.
+# Paths are resolved relative to this file, not the application's working directory.
+spring.config.import=database.properties,security.properties,integrations.properties,runtime.properties

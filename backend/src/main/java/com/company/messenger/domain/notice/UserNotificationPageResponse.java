@@ -6,7 +6,8 @@ public record UserNotificationPageResponse(
         List<UserNotificationResponse> items,
         int page,
         int size,
-        long totalElements
+        long totalElements,
+        long unreadCount
 ) {
 }
 

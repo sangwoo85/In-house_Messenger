@@ -1,0 +1,5 @@
+# Copy to the app userData directory as messenger.properties,
+# or set MESSENGER_DESKTOP_CONFIG to an absolute path before starting the app.
+# These are messenger server addresses, NOT employee/authentication API addresses.
+api.origin=https://messenger.internal
+websocket.origin=wss://messenger.internal

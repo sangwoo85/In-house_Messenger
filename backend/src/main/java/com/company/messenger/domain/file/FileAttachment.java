@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/** Records private attachment metadata and ownership; stored paths are never returned to clients. */
 @Entity
 @Table(name = "files")
 @Getter
@@ -55,6 +56,7 @@ public class FileAttachment {
         this.createdAt = createdAt;
     }
 
+    /** Records a stored upload using the server-generated path and authenticated uploader. */
     public static FileAttachment create(
             String originalName,
             String storedPath,

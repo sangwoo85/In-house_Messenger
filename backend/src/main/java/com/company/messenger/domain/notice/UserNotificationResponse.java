@@ -8,8 +8,11 @@ public record UserNotificationResponse(
         String content,
         String linkUrl,
         boolean read,
+        String notificationType,
+        NotificationDisplayMode displayMode,
         LocalDateTime createdAt
 ) {
+    /** Includes the persisted delivery options for both HTTP history and realtime delivery. */
     public static UserNotificationResponse from(UserNotification notification) {
         return new UserNotificationResponse(
                 notification.getId(),
@@ -17,6 +20,8 @@ public record UserNotificationResponse(
                 notification.getContent(),
                 notification.getLinkUrl(),
                 notification.isRead(),
+                notification.getNotificationType(),
+                notification.getDisplayMode(),
                 notification.getCreatedAt()
         );
     }

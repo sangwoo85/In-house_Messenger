@@ -1,24 +1,86 @@
+import { OrganizationTree } from '@/features/users/OrganizationTree'
+import { getOrganizations } from '@/features/users/organizations.api'
+import { ProfileSettings } from '@/features/users/ProfileSettings'
+import { Avatar } from './Avatar'
+import { Icon } from './Icon'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { GroupChannelDialog } from '@/features/channels/GroupChannelDialog'
 import { createChannel } from '@/features/channels/channels.api'
+import { formatChannelTime } from '@/features/channels/channelTime'
+import { logout } from '@/features/auth/auth.api'
+import { getNotifications } from '@/features/notifications/notifications.api'
 import { getUsers } from '@/features/users/users.api'
 import { useAuthStore } from '@/stores/auth.store'
 import { useChatStore } from '@/stores/chat.store'
 import { useUiStore } from '@/stores/ui.store'
+import { desktop } from '@/services/desktop'
 
+type NameSortDirection = 'asc' | 'desc'
+
+/** 메뉴와 대화방의 안읽음 개수를 짧은 배지로 표시한다. */
+function formatBadgeCount(count: number): string {
+  return count > 99 ? '99+' : String(count)
+}
+
+/** 읽지 않은 항목이 있을 때만 배지를 노출한다. */
+function TabBadge({ count }: { count: number }): JSX.Element | null {
+  if (count <= 0) {
+    return null
+  }
+
+  return (
+    <span className="ml-1 inline-flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold leading-5 text-white">
+      {formatBadgeCount(count)}
+    </span>
+  )
+}
+
+/** 탐색 메뉴, 실시간 사용자 상태, 조직 계층과 내 프로필 진입점을 제공한다. */
 export function Sidebar(): JSX.Element {
   const queryClient = useQueryClient()
+  const [showProfile, setShowProfile] = useState(false)
+  const [now, setNow] = useState(() => new Date())
+  const [showGroupDialog, setShowGroupDialog] = useState(false)
   const currentUser = useAuthStore((state) => state.user)
   const currentUserId = useAuthStore((state) => state.user?.userId)
+  const clearSession = useAuthStore((state) => state.clearSession)
   const channels = useChatStore((state) => state.channels)
   const upsertChannel = useChatStore((state) => state.upsertChannel)
   const selectedChannelId = useChatStore((state) => state.selectedChannelId)
   const selectChannel = useChatStore((state) => state.selectChannel)
   const viewMode = useUiStore((state) => state.viewMode)
   const setViewMode = useUiStore((state) => state.setViewMode)
+  const [nameSortDirection, setNameSortDirection] = useState<NameSortDirection>('asc')
   const usersQuery = useQuery({
     queryKey: ['users'],
-    queryFn: getUsers
+    queryFn: getUsers,
+    refetchInterval: 20000
   })
+  const organizationsQuery = useQuery({
+    queryKey: ['organizations'],
+    queryFn: getOrganizations,
+    staleTime: 60000,
+    refetchInterval: 60000
+  })
+  const notificationsQuery = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => getNotifications(0)
+  })
+
+  const chatUnreadCount = channels.reduce((sum, channel) => sum + channel.unreadCount, 0)
+  const notificationUnreadCount =
+    notificationsQuery.data?.unreadCount ?? 0
+
+  useEffect(() => {
+    void desktop.setBadge(chatUnreadCount + notificationUnreadCount)
+  }, [chatUnreadCount, notificationUnreadCount])
+
+  // Keep “today” labels correct when the app stays open across midnight.
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   const openDirectMessageMutation = useMutation({
     mutationFn: async (targetUserId: string) =>
@@ -35,6 +97,14 @@ export function Sidebar(): JSX.Element {
     }
   })
 
+  const logoutMutation = useMutation({
+    mutationFn: logout,
+    onSettled: () => {
+      clearSession()
+    }
+  })
+
+  /** 기존 1:1 방이 있으면 재사용하고 없으면 서버에서 생성한다. */
   const openDirectMessage = (targetUserId: string) => {
     if (!currentUserId) {
       return
@@ -57,130 +127,48 @@ export function Sidebar(): JSX.Element {
     openDirectMessageMutation.mutate(targetUserId)
   }
 
+  const nameFor = (id: string) => usersQuery.data?.find(user => user.userId === id)?.nickname ?? id
   return (
-    <aside className="flex w-72 flex-col bg-sidebar px-4 py-5 text-white">
-      <div className="mb-6 rounded-3xl bg-white/10 p-4">
-        <p className="text-xs uppercase tracking-[0.3em] text-blue-200">Messenger</p>
-        <div className="mt-4 flex items-center gap-3">
-          {currentUser?.profileImageUrl ? (
-            <img
-              alt={currentUser.userId}
-              className="h-14 w-14 rounded-2xl object-cover"
-              src={currentUser.profileImageUrl}
-            />
-          ) : (
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 text-lg font-semibold text-blue-100">
-              {currentUser?.userId?.slice(0, 1).toUpperCase() ?? '?'}
-            </div>
-          )}
-          <div className="min-w-0">
-            <p className="truncate text-base font-semibold text-white">{currentUser?.userId ?? '-'}</p>
-            <p className="mt-1 truncate text-sm text-slate-300">&nbsp;</p>
+    <aside className="messenger-sidebar">
+      <div className="messenger-brand"><span className="messenger-logo"><Icon name="chat" /></span><div><h1>Messenger</h1></div></div>
+      <nav className="messenger-nav" aria-label="메인 메뉴">
+        <button type="button" aria-pressed={viewMode === 'chat'} onClick={() => setViewMode('chat')}><Icon name="chat" />대화<TabBadge count={chatUnreadCount} /></button>
+        <button type="button" aria-pressed={viewMode === 'users'} onClick={() => setViewMode('users')}><Icon name="users" />조직</button>
+        <button type="button" aria-pressed={viewMode === 'notifications'} onClick={() => setViewMode('notifications')}><Icon name="bell" />알림<TabBadge count={notificationUnreadCount} /></button>
+      </nav>
+      <div className="messenger-sidebar-content">
+        <button type="button" onClick={() => setShowGroupDialog(true)} className="messenger-new-group"><Icon name="plus" />새 그룹 대화</button>
+        {showGroupDialog && <GroupChannelDialog onClose={() => setShowGroupDialog(false)} />}
+        {viewMode === 'users' ? <>
+          <div className="messenger-list-heading"><span>함께 일하는 동료</span><button type="button" onClick={() => setNameSortDirection(current => current === 'asc' ? 'desc' : 'asc')}>이름 {nameSortDirection === 'asc' ? '↑' : '↓'}</button></div>
+          <div className="messenger-sidebar-scroll">
+            {usersQuery.isLoading && <p className="messenger-sidebar-hint">사용자 목록을 불러오는 중...</p>}
+            {usersQuery.isError && <p className="messenger-sidebar-error">사용자 목록을 불러오지 못했습니다.</p>}
+            {openDirectMessageMutation.isError && <p className="messenger-sidebar-error">대화방을 열지 못했습니다.</p>}
+            {organizationsQuery.isError && <p className="messenger-sidebar-error">조직을 불러오지 못했습니다. <button onClick={() => void organizationsQuery.refetch()}>다시 시도</button></p>}
+            {organizationsQuery.data?.stale && <p className="messenger-sidebar-hint">업무 시스템 연결 지연으로 마지막 조직 정보를 표시합니다.</p>}
+            <OrganizationTree departments={organizationsQuery.data?.departments ?? []} users={usersQuery.data ?? organizationsQuery.data?.users ?? []} ascending={nameSortDirection === 'asc'} onOpenChat={openDirectMessage} />
           </div>
-        </div>
+        </> : viewMode === 'chat' ? <>
+          <div className="messenger-list-heading"><span>참여 중인 대화</span><span>{channels.length}</span></div>
+          <div className="messenger-sidebar-scroll">
+            {channels.map(channel => {
+              const title = channel.name ?? channel.members.filter(id => id !== currentUserId).map(nameFor).join(', ')
+              const activity = formatChannelTime(channel.lastMessageAt, now)
+              return <button key={channel.id} type="button" className="messenger-room" aria-pressed={selectedChannelId === channel.id} onClick={() => { setViewMode('chat'); selectChannel(channel.id) }}>
+                <Avatar name={title} group={channel.type === 'GROUP'} /><span className="messenger-room-copy"><strong>{title}</strong><small>{channel.type === 'DM' ? '1:1 대화' : `${channel.members.length}명 참여`}</small></span>
+                <span className="messenger-room-meta">
+                  {activity && <time className="messenger-room-time" dateTime={channel.lastMessageAt ?? undefined} title={activity.detail} aria-label={activity.detail}>{activity.label}</time>}
+                  {channel.unreadCount > 0 && <span className="messenger-unread">{formatBadgeCount(channel.unreadCount)}</span>}
+                </span>
+              </button>
+            })}
+            {!channels.length && <p className="messenger-sidebar-hint">아직 참여한 대화가 없습니다.<br />조직에서 동료를 선택해 대화를 시작하세요.</p>}
+          </div>
+        </> : <><div className="messenger-list-heading">공지와 알림</div><p className="messenger-sidebar-hint">회사에서 전하는 소식과 나에게 도착한 업무 알림을 확인하세요.</p></>}
       </div>
-      <div className="rounded-2xl bg-white/10 p-4">
-        <div className="mb-4 grid grid-cols-3 gap-2 rounded-2xl bg-white/5 p-1">
-          <button
-            className={['rounded-xl px-3 py-2 text-sm', viewMode === 'users' ? 'bg-white text-sidebar' : 'text-white'].join(' ')}
-            onClick={() => setViewMode('users')}
-            type="button"
-          >
-            사용자
-          </button>
-          <button
-            className={['rounded-xl px-3 py-2 text-sm', viewMode === 'chat' ? 'bg-white text-sidebar' : 'text-white'].join(' ')}
-            onClick={() => setViewMode('chat')}
-            type="button"
-          >
-            채팅
-          </button>
-          <button
-            className={['rounded-xl px-3 py-2 text-sm', viewMode === 'notifications' ? 'bg-white text-sidebar' : 'text-white'].join(' ')}
-            onClick={() => setViewMode('notifications')}
-            type="button"
-          >
-            알림
-          </button>
-        </div>
-        {viewMode === 'users' ? (
-          <>
-            <p className="text-sm text-blue-100">사용자 목록</p>
-            <div className="mt-4 space-y-3">
-              {usersQuery.isLoading ? <p className="text-sm text-slate-300">사용자 목록을 불러오는 중...</p> : null}
-              {usersQuery.data?.map((directoryUser) => (
-                <button
-                  key={directoryUser.id}
-                  className="w-full rounded-2xl bg-white/5 px-3 py-3 text-left transition hover:bg-white/10"
-                  onDoubleClick={() => openDirectMessage(directoryUser.userId)}
-                  type="button"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium">{directoryUser.nickname}</p>
-                    <span
-                      className={[
-                        'rounded-full px-2 py-0.5 text-[11px] font-semibold',
-                        directoryUser.status === 'ONLINE'
-                          ? 'bg-emerald-400/20 text-emerald-200'
-                          : directoryUser.status === 'AWAY'
-                            ? 'bg-amber-400/20 text-amber-200'
-                            : 'bg-slate-400/20 text-slate-200'
-                      ].join(' ')}
-                    >
-                      {directoryUser.status}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-300">{directoryUser.userId}</p>
-                </button>
-              ))}
-              {usersQuery.data?.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-white/15 px-4 py-6 text-sm text-slate-300">
-                  표시할 사용자가 없습니다.
-                </div>
-              ) : null}
-            </div>
-          </>
-        ) : viewMode === 'chat' ? (
-          <>
-            <p className="text-sm text-blue-100">채널</p>
-            <div className="mt-4 space-y-3">
-              {channels.map((channel) => (
-                <button
-                  key={channel.id}
-                  className={[
-                    'w-full rounded-2xl px-3 py-3 text-left transition',
-                    selectedChannelId === channel.id ? 'bg-white/15' : 'bg-white/5 hover:bg-white/10'
-                  ].join(' ')}
-                  onClick={() => {
-                    setViewMode('chat')
-                    selectChannel(channel.id)
-                  }}
-                  type="button"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium">{channel.name ?? channel.members.join(', ')}</p>
-                    {channel.unreadCount > 0 ? (
-                      <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-white">
-                        {channel.unreadCount}
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 text-xs text-slate-300">
-                    {channel.type === 'DM' ? '1:1 대화' : `${channel.members.length}명 참여`}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-blue-100">알림 안내</p>
-            <div className="mt-4 rounded-2xl bg-white/5 px-4 py-5 text-sm leading-6 text-slate-300">
-              우측 패널에서 사내 프로그램 알림과 공지 이력을 확인할 수 있습니다.
-            </div>
-          </>
-        )}
-      </div>
+      <div className="messenger-self"><button type="button" className="messenger-profile-trigger" onClick={() => setShowProfile(true)} aria-label="내 프로필 사진 설정"><Avatar name={currentUser?.nickname ?? currentUser?.userId ?? ''} imageUrl={currentUser?.profileImageUrl} /></button><div className="messenger-room-copy"><strong>{currentUser?.nickname ?? currentUser?.userId}</strong><small>{currentUser?.department ?? '부서 미지정'}</small></div><button type="button" className="messenger-logout" disabled={logoutMutation.isPending} onClick={() => logoutMutation.mutate()}>로그아웃</button></div>
+      {showProfile && <ProfileSettings onClose={() => setShowProfile(false)} />}
     </aside>
   )
 }

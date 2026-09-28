@@ -1,0 +1,10 @@
+services:
+  web:
+    image: nginx:stable-alpine3.23-perl
+    container_name: messenger-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8084:80"
+    volumes:
+      - ../../electron-app/out/web:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro

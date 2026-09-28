@@ -1,0 +1,13 @@
+# Messenger's OWN schema. Never use the employee/authentication database here.
+spring.datasource.url=jdbc:mysql://db.internal:3306/company_messenger?sslMode=VERIFY_IDENTITY&serverTimezone=Asia/Seoul
+spring.datasource.username=messenger_app
+spring.datasource.password=${MESSENGER_DB_PASSWORD}
+spring.data.redis.host=redis.internal
+spring.data.redis.port=6379
+spring.data.redis.username=messenger_user
+spring.data.redis.password=${MESSENGER_REDIS_PASSWORD}
+spring.data.redis.database=0
+app.redis.key-prefix=company-messenger:
+# MariaDB alternative (requires a MariaDB server and its own messenger schema):
+# spring.datasource.url=jdbc:mariadb://db.internal:3306/company_messenger?sslMode=verify-full
+# Driver selection is automatic; both MySQL and MariaDB JDBC drivers are bundled.

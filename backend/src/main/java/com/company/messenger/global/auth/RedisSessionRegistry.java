@@ -11,6 +11,8 @@ import java.util.Optional;
 public class RedisSessionRegistry implements SessionRegistry {
 
     private final StringRedisTemplate redisTemplate;
+    private final com.company.messenger.config.RedisKeyspace keyspace;
+    private final AuthProperties authProperties;
 
     @Override
     public Optional<String> findSessionId(String userId) {
@@ -19,7 +21,7 @@ public class RedisSessionRegistry implements SessionRegistry {
 
     @Override
     public void save(String userId, String sessionId) {
-        redisTemplate.opsForValue().set(key(userId), sessionId);
+        redisTemplate.opsForValue().set(key(userId), sessionId, authProperties.refreshTokenExpiration());
     }
 
     @Override
@@ -28,6 +30,6 @@ public class RedisSessionRegistry implements SessionRegistry {
     }
 
     private String key(String userId) {
-        return "session:" + userId;
+        return keyspace.key("session:" + userId);
     }
 }

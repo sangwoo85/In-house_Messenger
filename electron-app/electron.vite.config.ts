@@ -19,7 +19,7 @@ export default defineConfig({
       outDir: 'dist-electron',
       emptyOutDir: false,
       lib: {
-        entry: resolve(__dirname, 'electron/preload.ts')
+        entry: { preload: resolve(__dirname, 'electron/preload.ts'), notificationPreload: resolve(__dirname, 'electron/notificationPreload.ts') }
       }
     }
   },

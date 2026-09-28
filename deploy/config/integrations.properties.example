@@ -1,0 +1,31 @@
+# Password verification and account existence remain authoritative in these business APIs.
+app.external.auth-base-url=https://users.internal
+app.external.auth-login-path=/api/v1/login
+app.external.user-list-path=/api/v1/users
+app.external.organization-list-path=/api/v1/organizations
+app.external.auth-timeout-seconds=5
+# Increase for large staff directories; keeps external JSON buffering bounded.
+app.external.max-response-bytes=4194304
+# Read-only organization snapshots refresh on the first request after this interval.
+# An API outage retains the last snapshot with stale=true; login never uses this cache.
+app.external.directory-refresh-seconds=300
+app.external.legacy-user-api=false
+
+# Login sends {"emprId":"...","password":"..."} and reads userName/departmentName.
+# Roots and response field paths may be dot-separated, e.g. login-root=data.user.
+app.external.fields.login-id=emprId
+app.external.fields.password=password
+app.external.fields.user-id=emprId
+app.external.fields.user-name=userName
+app.external.fields.department-name=departmentName
+app.external.fields.department-id=departmentId
+app.external.fields.user-group=userGroup
+app.external.fields.login-root=
+app.external.fields.users-root=
+app.external.fields.organizations-root=
+app.external.fields.organization-id=id
+app.external.fields.organization-parent-id=parentId
+app.external.fields.organization-name=name
+# Optional status field: if present it MUST match this value before a session can be issued.
+app.external.fields.login-success=success
+app.external.fields.login-success-value=true

@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/** Stores channel identity; the canonical direct key prevents duplicate two-person conversations. */
 @Entity
 @Table(name = "channels")
 @Getter
@@ -18,6 +19,12 @@ public class Channel {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "direct_key", length = 64, unique = true)
+    private String directKey;
+
+    /** Assigns the stable pair key for a direct conversation, including migrated legacy channels. */
+    public void setDirectKey(String key) { this.directKey = key; }
 
     @Column(length = 100)
     private String name;
@@ -41,6 +48,7 @@ public class Channel {
         this.createdAt = createdAt;
     }
 
+    /** Creates channel metadata before the service inserts its owner and participant memberships. */
     public static Channel create(String name, ChannelType type, User createdBy) {
         return Channel.builder()
                 .name(name)

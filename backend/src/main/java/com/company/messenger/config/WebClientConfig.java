@@ -13,10 +13,18 @@ import java.time.Duration;
 @Configuration
 public class WebClientConfig {
 
+    /**
+     * Builds the business API client with bounded connection, response time and directory response size.
+     * @param builder shared HTTP client builder
+     * @param externalAuthProperties site endpoint and timeout settings
+     * @param maxResponseBytes maximum buffered JSON response size, including organization directories
+     * @return a client dedicated to the configured business API
+     */
     @Bean
     public WebClient internalAuthWebClient(
             WebClient.Builder builder,
-            ExternalAuthProperties externalAuthProperties
+            ExternalAuthProperties externalAuthProperties,
+            @org.springframework.beans.factory.annotation.Value("${app.external.max-response-bytes:4194304}") int maxResponseBytes
     ) {
         HttpClient httpClient = HttpClient.create()
                 .responseTimeout(Duration.ofSeconds(externalAuthProperties.authTimeoutSeconds()))
@@ -24,8 +32,8 @@ public class WebClientConfig {
 
         return builder
                 .baseUrl(externalAuthProperties.authBaseUrl())
+                .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(maxResponseBytes))
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
     }
 }
-

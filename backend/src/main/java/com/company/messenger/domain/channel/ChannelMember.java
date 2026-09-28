@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/** Keeps membership history and a monotonic unread cursor separately from permanent message receipts. */
 @Entity
 @Table(
         name = "channel_members",
@@ -55,6 +56,7 @@ public class ChannelMember {
         this.lastReadMessage = lastReadMessage;
     }
 
+    /** Starts a membership with the chosen role and the current join time. */
     public static ChannelMember join(Channel channel, User user, ChannelRole role) {
         return ChannelMember.builder()
                 .channel(channel)
@@ -64,7 +66,17 @@ public class ChannelMember {
                 .build();
     }
 
+    /** Marks departure without erasing membership history or prior message read receipts. */
+    public void leave() { this.leftAt = LocalDateTime.now(); }
+    /** Restores an ordinary membership with a new unread baseline; permanent read receipts remain intact. */
+    public void rejoin() { this.leftAt = null; this.joinedAt = LocalDateTime.now(); this.lastReadMessage = null; this.role = ChannelRole.MEMBER; }
+    /** Transfers group ownership to this remaining member. */
+    public void promote() { this.role = ChannelRole.OWNER; }
+
+    /** Advances the unread cursor only forward, so delayed requests cannot mark newer messages unread. */
     public void markRead(Message message) {
-        this.lastReadMessage = message;
+        if (lastReadMessage == null || message.getId() > lastReadMessage.getId()) {
+            this.lastReadMessage = message;
+        }
     }
 }

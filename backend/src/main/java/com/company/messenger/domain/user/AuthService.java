@@ -30,14 +30,13 @@ public class AuthService {
     private final SessionExpiryNotifier sessionExpiryNotifier;
     private final AuthProperties authProperties;
     private final PresenceService presenceService;
+    private final com.company.messenger.config.RealtimeSessionGuard realtimeSessionGuard;
 
+    /** Authenticates through the business API and replaces any previous messenger session. */
     @Transactional
     public LoginResponse login(LoginRequest request, HttpServletResponse response) {
-        if (!internalAuthClient.authenticate(request.userId(), request.password())) {
-            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
-        }
-
-        User user = userService.findOrCreateByUserId(request.userId());
+        var externalProfile = internalAuthClient.login(request.emprId(), request.password());
+        User user = userService.loginWithProfile(externalProfile);
         String newSessionId = UUID.randomUUID().toString();
 
         sessionRegistry.findSessionId(user.getUserId())
@@ -45,6 +44,7 @@ public class AuthService {
                 .ifPresent(existing -> sessionExpiryNotifier.notifySessionExpired(user.getUserId()));
 
         sessionRegistry.save(user.getUserId(), newSessionId);
+        realtimeSessionGuard.revoke(user.getUserId());
 
         String accessToken = jwtTokenProvider.createAccessToken(user.getUserId(), newSessionId);
         String refreshToken = jwtTokenProvider.createRefreshToken(user.getUserId(), newSessionId);
@@ -55,7 +55,8 @@ public class AuthService {
         return LoginResponse.of(user, accessToken, authProperties.accessTokenExpiration().toSeconds());
     }
 
-    @Transactional(readOnly = true)
+    /** Renews access only while the external directory still contains the account. */
+    @Transactional
     public LoginResponse refresh(HttpServletRequest request, HttpServletResponse response) {
         String refreshToken = extractRefreshToken(request);
         JwtTokenClaims claims = jwtTokenProvider.parseAndValidate(refreshToken, TokenType.REFRESH);
@@ -74,25 +75,35 @@ public class AuthService {
             throw new BusinessException(ErrorCode.SESSION_EXPIRED);
         }
 
-        User user = userService.getByUserId(claims.userId());
+        User user;
+        try {
+            user = userService.getOrCreateDirectoryUser(claims.userId());
+        } catch (BusinessException exception) {
+            if (exception.getErrorCode() != ErrorCode.USER_NOT_FOUND) throw exception;
+            logout(claims.userId(), response);
+            throw new BusinessException(ErrorCode.SESSION_EXPIRED);
+        }
         String accessToken = jwtTokenProvider.createAccessToken(user.getUserId(), currentSessionId);
         addRefreshCookie(response, refreshToken);
         return LoginResponse.of(user, accessToken, authProperties.accessTokenExpiration().toSeconds());
     }
 
+    /** Revokes refresh tokens, sockets and the live presence heartbeat. */
     @Transactional
-    public void logout(String userId, HttpServletRequest request, HttpServletResponse response) {
+    public void logout(String userId, HttpServletResponse response) {
         if (userId == null) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
 
         refreshTokenStore.delete(userId);
         sessionRegistry.delete(userId);
+        realtimeSessionGuard.revoke(userId);
         userService.markLoggedOut(userId);
         presenceService.markOffline(userId);
         expireRefreshCookie(response);
     }
 
+    /** Returns the current local profile reference; passwords are not stored locally. */
     @Transactional(readOnly = true)
     public UserProfileResponse getMyProfile(String userId) {
         User user = userService.getByUserId(userId);
@@ -117,7 +128,7 @@ public class AuthService {
                 .httpOnly(true)
                 .secure(authProperties.cookieSecure())
                 .path("/")
-                .sameSite("Strict")
+                .sameSite(authProperties.cookieSecure() ? "None" : "Strict")
                 .maxAge(authProperties.refreshTokenExpiration())
                 .build();
 
@@ -129,7 +140,7 @@ public class AuthService {
                 .httpOnly(true)
                 .secure(authProperties.cookieSecure())
                 .path("/")
-                .sameSite("Strict")
+                .sameSite(authProperties.cookieSecure() ? "None" : "Strict")
                 .maxAge(Duration.ZERO)
                 .build();
 

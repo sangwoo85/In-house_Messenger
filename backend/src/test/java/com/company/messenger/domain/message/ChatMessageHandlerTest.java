@@ -12,24 +12,21 @@ import static org.mockito.Mockito.*;
 class ChatMessageHandlerTest {
 
     @Test
-    void sendMessageShouldBroadcastToChannelTopic() {
+    void sendMessageShouldDelegateCommittedDeliveryToService() {
         ChatService chatService = mock(ChatService.class);
         SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
         ChatMessageHandler handler = new ChatMessageHandler(chatService, messagingTemplate);
         ChatMessageRequest request = new ChatMessageRequest(10L, "hello", MessageType.TEXT, null);
-        MessageResponse response = new MessageResponse(1L, 10L, "user01", "hello", MessageType.TEXT, null, java.time.LocalDateTime.now(), false);
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                 new AuthenticatedUser("user01", "session-1"),
                 null,
                 AuthorityUtils.NO_AUTHORITIES
         );
 
-        when(chatService.saveMessage("user01", request)).thenReturn(response);
 
         handler.sendMessage(request, authentication);
 
         verify(chatService).saveMessage("user01", request);
-        verify(messagingTemplate).convertAndSend(eq("/topic/channel/10"), eq(response));
     }
 
     @Test

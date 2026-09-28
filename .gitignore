@@ -11,3 +11,17 @@ target/
 !.env.example
 *.log
 backend/data/
+
+/deploy/config/*.properties
+/backend/config/*.properties
+/electron-app/messenger.properties
+
+# Runtime data and credentials are transferred separately from source code.
+uploads/
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+/.codex/

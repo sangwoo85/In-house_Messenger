@@ -81,12 +81,27 @@ backend/src/main/java/com/company/messenger/
 - 메시지 타입은 텍스트, 이미지, 파일, 시스템, 공지, 외부 알림을 지원한다.
 - 메시지 목록은 커서 기반 페이지네이션을 사용한다.
 - 타이핑 상태를 실시간으로 전파한다.
+- 글자 입력과 파일 업로드 진행률 갱신은 변경 없는 대화 목록을 다시 렌더링하지 않는다. 날짜·시간 포맷터와 사용자 조회를 재사용해 긴 대화에서도 입력 반응을 유지한다.
+
+### Message Reactions And Replies
+
+- 말풍선 아래 `공감`에서 👍, ❤️, 😊, 😂, 😮, 🙏 중 하나를 선택한다. 메시지당 사용자별 한 개의 반응을 유지하며 같은 반응을 다시 누르면 취소한다. 반응 수와 참여자 이름을 표시한다.
+- `답장`을 누르면 입력창 위에 원문과 작성자가 표시된다. 취소 버튼 또는 입력창의 Esc로 인용만 해제하고 작성한 내용은 유지한다. 대화방 전환 시 방별 답장 초안을 유지한다.
+- 텍스트·사진·파일 전송 요청에 선택적 `replyToMessageId`를 포함한다. 전송 실패 시 내용·원문·요청 ID를 유지하고, 저장 확인 후 해당 초안을 초기화한다.
+- 메시지 응답과 실시간 이벤트의 `replyTo`는 `{ id, senderUserId, content, type, deleted }` 또는 `null`이다. 서버가 원문을 조회해 작성자·본문을 구성하며 중첩 인용은 포함하지 않는다. 첨부 원문은 파일명으로 표시한다.
+- 원문은 같은 채팅방에 있는 삭제되지 않은 메시지여야 한다. 유효하지 않은 원문은 `MESSAGE_008`로 거부한다. 다른 사람에게 답장하면 해당 원문의 영구 읽음 기록을 추가한다.
+- 원문 삭제 시 인용에는 삭제 상태만 표시한다. 인용 본문을 별도 복사 저장하지 않으며 이력 조회에서 원문들을 일괄 조회한다.
+- 인용 부분을 누르면 원문으로 이동해 잠시 강조한다. 이전 페이지에 있는 원문은 이력을 순차 조회해 찾으며, 사용자는 조회를 취소할 수 있다. 실패 시 재시도 안내를 표시한다.
+- Flyway `V6__message_replies.sql`에서 nullable `messages.reply_to_message_id`, 인덱스, 자기 참조 외래 키를 추가한다. 기존 메시지는 일반 메시지로 유지된다.
 
 ### Files
 
 - 업로드 방식은 multipart다.
 - 허용 크기는 이미지 10MB, 기타 파일 50MB다.
 - 파일은 서버 저장소에 보관하고 다운로드는 인증 사용자를 전제로 한다.
+- 첨부 전송 중 입력창 위에 파일별 진행 막대, 퍼센트, 전송량/전체 용량을 표시한다. HTTP 업로드 진행 이벤트를 사용하며 multipart 전송 비율을 파일 크기에 맞춰 표시한다.
+- 전송량 100%는 파일 업로드 요청 본문 전송 완료를 의미한다. 서버 응답을 기다리는 동안 `파일 처리 중`, 파일 저장 확인 후 채팅 메시지를 저장하는 동안 `메시지 전송 중`으로 구분한다.
+- 파일 업로드 실패 시 재시도하면 진행률을 초기화한다. 업로드 후 메시지 전송만 실패했다면 업로드를 재사용하고 100%에서 메시지 전송만 재시도한다. 모든 전송이 확인되면 진행 표시를 제거한다.
 
 ### Presence And Notifications
 
@@ -136,9 +151,12 @@ backend/src/main/java/com/company/messenger/
 - `POST /api/v1/channels/{id}/members`
 - `DELETE /api/v1/channels/{id}/members/{userId}`
 - `GET /api/v1/channels/{id}/messages?cursor=&size=30`
+- `POST /api/v1/channels/{id}/messages` (선택적 `replyToMessageId` 지원)
 - `PATCH /api/v1/channels/{id}/read`
 - `PATCH /api/v1/messages/{id}`
 - `DELETE /api/v1/messages/{id}`
+- `PUT /api/v1/messages/{id}/reaction`
+- `DELETE /api/v1/messages/{id}/reaction`
 
 ### File
 
